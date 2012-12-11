@@ -1,0 +1,873 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>"Programming Collective Intelligence - Building Smart Web 2.0 Applications"</title><meta name="generator" content="MATLAB 7.13"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2012-12-10"><meta name="DC.source" content="recommendations.m"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head><body><div class="content"><h1>"Programming Collective Intelligence - Building Smart Web 2.0 Applications"</h1><!--introduction--><p>by Toby Segaran (O'Reilly Media, ISBN-10: 0-596-52932-5)</p><p>Have you ever wondered how Amazon came up with recommendations like "customers who bought this item also bought..."? Collective Intelligence is at the core of Web 2.0 revolution.</p><p>This book is a great introduction to data mining techniques that as applied by companies like Amazon. It actually gives functional code examples that you can play with. The book uses Python for examples, so I rewrote them in MATLAB. I didn't work on del.icio.us link recommender example, however - I could parse XML response returned by del.icio.us API using xmlread. But perhaps it is easier to use the Python code in the book to get the data in text file and import that into MATLAB.</p><p>One word of caution - the result you get with my M-files may not be identical to those in the book, though they should be fairly close. I believe this is because of the rounding errors caused by difference in degree of precision between MATLAB and Python. If this is the case, it's not a big deal for our purpose here, because we don't need  precise numbers to get recommendations.</p><!--/introduction--><h2>Contents</h2><div><ul><li><a href="#1">Chapter 2: Making Recommendations</a></li><li><a href="#2">Create the movie review dataset</a></li><li><a href="#3">Generate "Snakes by Dupree preference space" plot</a></li><li><a href="#4">Euclidean Distance Score (Page 11)</a></li><li><a href="#5">Generate "Mick LaSalle x Gene Seymour preference space" plot</a></li><li><a href="#6">Generate "Jack Matthews x Lisa Rose preference space" plot</a></li><li><a href="#7">Pearson Correlation Score (page 13)</a></li><li><a href="#8">Ranking the Critics (Page 15)</a></li><li><a href="#9">Recommending Items (Page 17)</a></li><li><a href="#10">Matching Products (page 18)</a></li><li><a href="#11">Generate "Just My Luck vs. Superman Returns" plot</a></li><li><a href="#12">Get Recommendations with transposed data (Page 18)</a></li><li><a href="#13">Building the Item Comparison Dataset</a></li><li><a href="#14">Get Recommendations</a></li><li><a href="#15">Using the MovieLens Dataset - import data (Page 25)</a></li><li><a href="#16">Using the MovieLens Dataset - test the dataset (Page 26)</a></li><li><a href="#17">Using the MovieLens Dataset - get user-based recommendations (Page 26)</a></li><li><a href="#18">Using the MovieLens Dataset - build the item-similarity dataset</a></li><li><a href="#19">Or load prebuild dataset</a></li><li><a href="#20">Using the MovieLens Dataset - get item-based recommendations</a></li><li><a href="#21">User-Based or Item-Based Filtering?</a></li></ul></div><h2>Chapter 2: Making Recommendations<a name="1"></a></h2><p>This chapter explains how Amazon-like recommendation engines work. The approach used here is called Collaborative Filtering.</p><h2>Create the movie review dataset<a name="2"></a></h2><p>Page 8: Collaborative Filtering - Collecting Preferences</p><p>Check out "prefs.xls", which contain the basic dataset we use in the following examples. It is a table of data listing movie critics, movies they reviewed, and their ratings. But the data can represent anything you want - the algorithm won't care so long as the data is formatted in a similar way. You can import data from the Excel file using the Import Wizard, but here we run this section of the code to import data into MATLAB Workspace.</p><pre class="codeinput">newData = importdata(<span class="string">'prefs.xls'</span>);
+
+<span class="comment">% For some XLS and other spreadsheet files, returned data are packed</span>
+<span class="comment">% within an extra layer of structures.  Unpack them.</span>
+fields = fieldnames(newData.data);
+newData.data = newData.data.(fields{1});
+fields = fieldnames(newData.textdata);
+newData.textdata = newData.textdata.(fields{1});
+
+<span class="comment">% Create new variables in the base workspace from those fields.</span>
+vars = fieldnames(newData);
+<span class="keyword">for</span> i = 1:length(vars)
+    assignin(<span class="string">'base'</span>, vars{i}, newData.(vars{i}));
+<span class="keyword">end</span>
+
+<span class="comment">% There are 7 movie critics:</span>
+<span class="comment">% 'Lisa Rose', 'Gene Seymour', 'Michael Phillips', ...</span>
+<span class="comment">%    'Claudia Puig', 'Mick LaSalle', 'Jack Matthiews', 'Toby'</span>
+
+critics = textdata(2:end,1);
+
+<span class="comment">% There are 6 movies:</span>
+<span class="comment">% 'Lady in the Water', 'Snakes on a Plane', 'Just My Luck',...</span>
+<span class="comment">%    'Superman Returns', 'The Night Listener', 'You, Me and Dupree'</span>
+
+movies = textdata(1,2:end);
+
+<span class="comment">% Data is a matrix of ratings by those critics (row) x movies (col)</span>
+<span class="comment">%   [2.5 3.5 3.0 3.5 3.0 2.5;</span>
+<span class="comment">%    3.0 3.5 1.5 5.0 3.0 3.5;</span>
+<span class="comment">%    2.5 3.0 0 3.5 4.0 0;</span>
+<span class="comment">%    0 3.5 3.0 4.0 4.5 2.5;</span>
+<span class="comment">%    3.0 4.0 2.0 3.0 3.0 2.0;</span>
+<span class="comment">%    3.0 4.0 0 5.0 3.0 3.5;</span>
+<span class="comment">%    0 4.5 0 4.0 0 1.0];</span>
+
+prefs = data;
+
+clear <span class="string">newData</span> <span class="string">fields</span> <span class="string">vars</span> <span class="string">i</span> <span class="string">data</span> <span class="string">textdata</span>;
+
+disp(<span class="string">'Sample data has been loaded into Workspace.'</span>)
+</pre><pre class="codeoutput">Sample data has been loaded into Workspace.
+</pre><h2>Generate "Snakes by Dupree preference space" plot<a name="3"></a></h2><p>Page 10: Finding Similar Users - Euclidean Distance Score</p><p>This section of the code plots the movie critics on a graph based on their ratings for two movies - "Snakes on the Plane" and "You, Me, and Dupree". This is a way to show visually the relative positions of the people in "preference space". The graph is 2D, so we can only use two movies to position critics, but the preference space could be multi- dimensional to use data from more movies.</p><pre class="codeinput">x = prefs(:,6);
+y = prefs(:,2);
+datalabels = {<span class="string">'Rose'</span>, <span class="string">'Seymour'</span>, <span class="string">'Phillips'</span>, <span class="string">' '</span>, <span class="string">'LaSalle'</span>, <span class="string">'Matthiews'</span>, <span class="string">'Toby'</span>};
+nonzero = find(x~=0);
+
+figure1 = figure(<span class="string">'Name'</span>,<span class="string">'Fig-1'</span>);
+axes(<span class="string">'Parent'</span>,figure1);
+xlim([0 5]);
+ylim([0 5]);
+hold(<span class="string">'all'</span>);
+title(<span class="string">'Dupree x Snake Preference Space'</span>);
+scatter(x(nonzero), y(nonzero), <span class="string">'DisplayName'</span>, <span class="string">'Critics'</span>, <span class="string">'XDataSource'</span>, <span class="string">'x'</span>, <span class="string">'YDataSource'</span>,<span class="keyword">...</span>
+    <span class="string">'y'</span>); figure(gcf)
+text(x(nonzero)+0.1,y(nonzero),datalabels(nonzero));
+text(x(4,1)+0.1,y(4,1)-0.2,<span class="string">'Puig'</span>);
+xlabel(<span class="string">'Dupree'</span>);
+ylabel(<span class="string">'Snakes'</span>);
+
+clear <span class="string">x</span> <span class="string">y</span> <span class="string">figure1</span> <span class="string">datalabels</span> <span class="string">nonzero</span>;
+</pre><img vspace="5" hspace="5" src="recommendations_01.png" alt=""> <h2>Euclidean Distance Score (Page 11)<a name="4"></a></h2><p>Euclidean distance takes the relative difference between two points in multi-dimensional space and gives you how far apart they are. We can use it to decide the similarity of two people. "euclidean.xls" shows how this algorithm works in Excel.</p><pre class="codeinput"><span class="comment">% "Lisa Rose" = 1, "Gene Seymour" = 2</span>
+disp(<span class="string">'What is the similarity score between Lisa Rose and Gene Seymour? - Euclidean Distance'</span>)
+sim_distance(prefs, 1, 2)
+
+clear <span class="string">ans</span>;
+</pre><pre class="codeoutput">What is the similarity score between Lisa Rose and Gene Seymour? - Euclidean Distance
+
+ans =
+
+    0.2943
+
+</pre><h2>Generate "Mick LaSalle x Gene Seymour preference space" plot<a name="5"></a></h2><p>Page 12: Finding Similar Users - Pearson Correlation Score</p><p>This section of the code plots the movie ratings of two critics Lisa Rose and Gene Seymour on a graph and shows the relative positions of rated movies between them. After generating the graph, go to "Tools --&gt; Basic Fitting" in the resulting Figure window, select "linear" option, and close the dialog box. Now you see the best-fit line in the graph. The line and how tightly the points cluster around it indicates the relative similarity between those two critics. If their ratings are identical, the line will be diagonal. Compare to the graph generated by the next section of the code.</p><pre class="codeinput">x = prefs(5,:);
+y = prefs(2,:);
+datalabels={<span class="string">'Lady'</span>, <span class="string">'Snakes'</span>, <span class="string">'Just My Luck'</span>,<span class="string">'Superman'</span>, <span class="string">' '</span>, <span class="string">'Dupree'</span>};
+x1=0:5;
+y1=0.62.*x1+1.5;
+
+figure2 = figure(<span class="string">'Name'</span>,<span class="string">'Fig-2'</span>);
+axes1=axes(<span class="string">'Parent'</span>,figure2);
+xlim([0 5]);
+ylim([0 5]);
+hold(<span class="string">'all'</span>);
+title(<span class="string">'Mick LaSalle x Gene Seymour Preference Space'</span>);
+scatter(x, y, <span class="string">'Parent'</span>, axes1, <span class="string">'DisplayName'</span>, <span class="string">'Movies'</span>, <span class="string">'XDataSource'</span>, <span class="string">'x'</span>, <span class="string">'YDataSource'</span>,<span class="keyword">...</span>
+    <span class="string">'y'</span>); figure(gcf)
+plot(x1, y1, <span class="string">'Parent'</span>, axes1, <span class="string">'DisplayName'</span>, <span class="string">'Linear'</span>, <span class="string">'XDataSource'</span>, <span class="string">'x1'</span>, <span class="string">'YDataSource'</span>, <span class="string">'y2'</span>); figure(gcf)
+text(x+0.1,y,datalabels);
+text(x(5)+0.1,y(5)-0.2,<span class="string">'Night Listener'</span>);
+xlabel(<span class="string">'Mick LaSalle'</span>);
+ylabel(<span class="string">'Gene Seymour'</span>);
+legend(axes1,<span class="string">'show'</span>);
+
+clear <span class="string">axes1</span> <span class="string">x</span> <span class="string">x1</span> <span class="string">y</span> <span class="string">y1</span> <span class="string">figure2</span> <span class="string">datalabels</span> <span class="string">nonzero</span>;
+</pre><img vspace="5" hspace="5" src="recommendations_02.png" alt=""> <h2>Generate "Jack Matthews x Lisa Rose preference space" plot<a name="6"></a></h2><p>Page 12: Finding Similar Users - Pearson Correlation Score</p><p>Here is another graph - follow the previous steps to add the best-fit line. You notice that this time the points are lined up much closer to the best-fit line. This indicates that there is high correlation between the ratings given by Lisa Rose and Jack Matthews. We can use this correlation coefficient data to determine how similar two people are. This approach is implemented in Pearson Correlation Score below.</p><pre class="codeinput">x = prefs(6,:);
+y = prefs(1,:);
+datalabels={<span class="string">'Lady'</span>, <span class="string">'Snakes'</span>, <span class="string">'Just My Luck'</span>,<span class="string">'Superman'</span>, <span class="string">'Night Listener'</span>, <span class="string">'Dupree'</span>};
+nonzero = find(x~=0);
+x1=0:5;
+y1=0.45.*x1+1.3;
+
+figure3 = figure(<span class="string">'Name'</span>,<span class="string">'Fig-3'</span>);
+axes1 = axes(<span class="string">'Parent'</span>,figure3);
+xlim([0 5]);
+ylim([0 5]);
+hold(<span class="string">'all'</span>);
+title(<span class="string">'Jack Matthews x Lisa Rose Preference Space'</span>);
+scatter(x(nonzero), y(nonzero), <span class="string">'Parent'</span>, axes1, <span class="string">'DisplayName'</span>, <span class="string">'Movies'</span>, <span class="string">'XDataSource'</span>, <span class="string">'x'</span>, <span class="string">'YDataSource'</span>,<span class="string">'y'</span>); figure(gcf)
+plot(x1, y1, <span class="string">'Parent'</span>, axes1, <span class="string">'DisplayName'</span>, <span class="string">'Linear'</span>, <span class="string">'XDataSource'</span>, <span class="string">'x1'</span>, <span class="string">'YDataSource'</span>, <span class="string">'y2'</span>); figure(gcf)
+text(x(nonzero)+0.1,y(nonzero),datalabels(nonzero));
+xlabel(<span class="string">'Jack Matthoews'</span>);
+ylabel(<span class="string">'Lisa Rose'</span>);
+legend(axes1,<span class="string">'show'</span>);
+
+clear <span class="string">axes1</span> <span class="string">x</span> <span class="string">x1</span> <span class="string">y</span> <span class="string">y1</span> <span class="string">figure3</span> <span class="string">datalabels</span> <span class="string">nonzero</span>;
+</pre><img vspace="5" hspace="5" src="recommendations_03.png" alt=""> <h2>Pearson Correlation Score (page 13)<a name="7"></a></h2><p>Pearson Correlation Score works well when you have grade inflation. In the previous graph, you see that Jack Matthews tends to give higher rating than Lisa Rose, but the line fit well because they have relatively similar preferences. "pearson.xls" shows how this algorithm works in Excel.</p><pre class="codeinput"><span class="comment">% "Lisa Rose" = 1, "Gene Seymour" = 2</span>
+disp(<span class="string">'What is the similarity score between Lisa Rose and Gene Seymour? - Pearson Correlation Coefficient'</span>)
+sim_pearson(prefs, 1, 2)
+
+clear <span class="string">ans</span>;
+</pre><pre class="codeoutput">What is the similarity score between Lisa Rose and Gene Seymour? - Pearson Correlation Coefficient
+
+ans =
+
+    0.3961
+
+</pre><h2>Ranking the Critics (Page 15)<a name="8"></a></h2><p>recommend other users with similar tastes</p><p>Here we take advantage of the two similarity score metrics identified above to score similarities to a given person of all other people in the data and return a ranked result. This can be used to identify group of people with similar preferences. Perhaps great for community building, or even a matchmaking service ;-)</p><pre class="codeinput"><span class="comment">% "Toby" = 7</span>
+temp = topMatches(prefs, 7, 3, @sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+<span class="keyword">for</span> i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=critics{temp(i,2),:};
+<span class="keyword">end</span>
+
+disp(<span class="string">'Whoes tastes are similar to Toby''s?'</span>)
+disp(tempCell)
+
+clear <span class="string">i</span> <span class="string">temp</span> <span class="string">tempCell</span>;
+</pre><pre class="codeoutput">Whoes tastes are similar to Toby's?
+    [0.9912]    'Lisa Rose'   
+    [0.9245]    'Mick LaSalle'
+    [0.8934]    'Claudia Puig'
+
+</pre><h2>Recommending Items (Page 17)<a name="9"></a></h2><p>Similarity scores can be used to make recommendations. You can find who has similar tastes to given person and find out what other movies those people have seen that the given person has not seen. But we need to use weighted average to make the result consistent. "recommendations for Toby.xls" shows how this algorithm works in Excel.</p><pre class="codeinput"><span class="comment">% get user-based recommendations for Toby</span>
+temp = getRecommendations(prefs,7,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+<span class="keyword">for</span> i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+<span class="keyword">end</span>
+
+disp(<span class="string">'Recommend movies for Toby - user-based filtering'</span>)
+disp(tempCell)
+
+clear <span class="string">i</span> <span class="string">temp</span> <span class="string">tempCell</span>;
+</pre><pre class="codeoutput">Recommend movies for Toby - user-based filtering
+    [3.3478]    'The Night Listener'
+    [2.8325]    'Lady in the Water' 
+    [2.5310]    'Just My Luck'      
+
+</pre><h2>Matching Products (page 18)<a name="10"></a></h2><p>Rather than recommending products based on similar people's preference, Amazon gives you recommendations based on the products you selected. So we need to modify the above algorithm to work item-centric rather than user-centric. In other words, rather than comparing people to people, we can compare item to item and find out how similar they are. We can do this by transposing the preference data without modifying the code.</p><pre class="codeinput"><span class="comment">% Which movie is most similar to 'Superman Returns'?</span>
+temp = topMatches(prefs',4,5,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+<span class="keyword">for</span> i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+<span class="keyword">end</span>
+
+disp(<span class="string">'Which movies are most similar to ''Superman Returns''?'</span>)
+disp(tempCell)
+
+clear <span class="string">i</span> <span class="string">temp</span> <span class="string">tempCell</span>;
+</pre><pre class="codeoutput">Which movies are most similar to 'Superman Returns'?
+    [ 0.6580]    'You, Me and Dupree'
+    [ 0.4880]    'Lady in the Water' 
+    [ 0.1118]    'Snakes on a Plane' 
+    [-0.1798]    'The Night Listener'
+    [-0.4229]    'Just My Luck'      
+
+</pre><h2>Generate "Just My Luck vs. Superman Returns" plot<a name="11"></a></h2><p>Page 19: Matching Products</p><p>If you run the previous section of the code, you notice that some scores are negative. Run the following code to generate a plot. You see that the line is sloped downwards on the right, indicating that Superman Returns and Just My Luck are negatively correlated - those who like one would not like the other.</p><pre class="codeinput">x = prefs(:,3);
+y = prefs(:,4);
+datalabels = {<span class="string">'Rose'</span>, <span class="string">'Seymour'</span>, <span class="string">'Phillips'</span>, <span class="string">'Puig'</span>, <span class="string">'LaSalle'</span>, <span class="string">'Matthiews'</span>, <span class="string">'Toby'</span>};
+nonzero = find(x~=0);
+x1=0:5;
+y1=-0.48.*x1+5;
+
+figure4 = figure(<span class="string">'Name'</span>,<span class="string">'Fig-4'</span>);
+axes1 = axes(<span class="string">'Parent'</span>,figure4);
+xlim([0 5]);
+ylim([0 5]);
+hold(<span class="string">'all'</span>);
+title(<span class="string">'Just My Luck x Superman Returns Preference Space'</span>);
+scatter(x(nonzero), y(nonzero), <span class="string">'Parent'</span>, axes1, <span class="string">'DisplayName'</span>, <span class="string">'Critics'</span>, <span class="string">'XDataSource'</span>, <span class="string">'x'</span>, <span class="string">'YDataSource'</span>, <span class="string">'y'</span>); figure(gcf)
+plot(x1, y1, <span class="string">'Parent'</span>, axes1, <span class="string">'DisplayName'</span>, <span class="string">'Linear'</span>, <span class="string">'XDataSource'</span>, <span class="string">'x1'</span>, <span class="string">'YDataSource'</span>, <span class="string">'y2'</span>); figure(gcf)
+text(x(nonzero)+0.1,y(nonzero),datalabels(nonzero));
+xlabel(<span class="string">'Just My Luck'</span>);
+ylabel(<span class="string">'Superman Returns'</span>);
+legend(axes1,<span class="string">'show'</span>);
+
+clear <span class="string">axes1</span> <span class="string">x</span> <span class="string">x1</span> <span class="string">y</span> <span class="string">y1</span> <span class="string">figure4</span> <span class="string">datalabels</span> <span class="string">nonzero</span>;
+</pre><img vspace="5" hspace="5" src="recommendations_04.png" alt=""> <h2>Get Recommendations with transposed data (Page 18)<a name="12"></a></h2><p>Using the transposed data, you get recommendations of people for given item. This can be used to predict which other user will likely enjoy the movie. Applied to marketing cases, this can be used to identify potential buyers for a given item for marketing promotion.</p><pre class="codeinput"><span class="comment">% "Just My Luck" = 3; who would like this movie?</span>
+temp= getRecommendations(prefs',3,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+<span class="keyword">for</span> i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=critics{temp(i,2),:};
+<span class="keyword">end</span>
+
+disp(<span class="string">'Who would probably like ''Just My Luck''?'</span>)
+disp(tempCell)
+
+clear <span class="string">i</span> <span class="string">temp</span> <span class="string">tempCell</span>;
+</pre><pre class="codeoutput">Who would probably like 'Just My Luck'?
+    [4]    'Michael Phillips'
+    [3]    'Jack Matthiews'  
+
+</pre><h2>Building the Item Comparison Dataset<a name="13"></a></h2><p>Page 23: Item-Based Filtering - Building the Item Comparison Dataset</p><p>The algorithm in getRecommendations.m uses user preference to generate recommendations. This will work in a small scale, but it will not be fast once we have a large number of users or items. Therefore, big websites like Amazon.com would not want to use this algorithm as it is. The technique we implemented so far is called "user-based collaborative filtering". More scalable technique is called "item-based collaborative filtering" and it precomputes the similarities among items, rather than users. The key advantage is comparison between items will not change as often as comparison between users, so it doesn't have to be real-time. Yet, once you have the precomputed preference data, you can use it to come up with recommendations very fast. This data has to be updated more frequently early on when you have a small user base, but less frequently as you grow your dataset.</p><pre class="codeinput">itemsim = calculateSimilarItems(prefs,10,@sim_distance);
+
+disp(<span class="string">'Item-based similarity table has been created.'</span>)
+</pre><pre class="codeoutput">Item-based similarity table has been created.
+</pre><h2>Get Recommendations<a name="14"></a></h2><p>Page 25: Item-Based Filtering - Getting Recommendations</p><p>Now we can use the precomputed preference data to make recommendations. You get all items user rated, find similar items using the precomputed dataset, and weight the result according to how similar they are. "item- based recommendations for Toby.xls" shows how this algorithm works in Excel.</p><pre class="codeinput"><span class="comment">% recommend movies highly rated by other users with similar tastes</span>
+temp=getRecommendedItems(prefs,itemsim,7);
+tempCell = cell(size(temp,1),2);
+
+<span class="keyword">for</span> i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+<span class="keyword">end</span>
+
+disp(<span class="string">'Recommend movies for Toby - item-based filtering'</span>);
+disp(tempCell)
+
+clear <span class="string">i</span> <span class="string">temp</span> <span class="string">tempCell</span>;
+</pre><pre class="codeoutput">Recommend movies for Toby - item-based filtering
+    [3.1667]    'The Night Listener'
+    [2.9366]    'Just My Luck'      
+    [2.8688]    'Lady in the Water' 
+
+</pre><h2>Using the MovieLens Dataset - import data (Page 25)<a name="15"></a></h2><p>MovieLens dataset was developed by the GroupLens project at the University of Minnesota and it can be downloaded from <a href="http://www.grouplens.org/node/12">http://www.grouplens.org/node/12</a> There are two dataset and here we use the 100,000 dataset.</p><pre class="codeinput"><span class="comment">% load data from u.data and u.item</span>
+[prefs, movies]= loadMovieLens(<span class="string">'ml-data_0'</span>);
+
+clear <span class="string">path</span> <span class="string">critics</span> <span class="string">itemsim</span>;
+
+disp(<span class="string">'MovieLens dataset has been loaded into Workspace.'</span>)
+</pre><pre class="codeoutput">MovieLens dataset has been loaded into Workspace.
+</pre><h2>Using the MovieLens Dataset - test the dataset (Page 26)<a name="16"></a></h2><p>Look at some ratings of User ID = 87</p><pre class="codeinput"><span class="comment">% just the first 100 items</span>
+user87=prefs(87,1:100);
+j=0;
+<span class="keyword">for</span> i=1:size(user87,2)
+    <span class="comment">% process if rated</span>
+    <span class="keyword">if</span> user87(1,i)~=0
+        j=j+1;
+        temp{j,1}=movies{1,i};
+        temp{j,2}=user87(1,i);
+    <span class="keyword">end</span>
+<span class="keyword">end</span>
+
+disp(<span class="string">'Show the first 10 movies reviewed by User [ID = 87] in MovieLens dataset.'</span>)
+disp(temp(1:10,:))
+
+clear <span class="string">i</span> <span class="string">j</span> <span class="string">user87</span> <span class="string">temp</span> <span class="string">ans</span>;
+</pre><pre class="codeoutput">Show the first 10 movies reviewed by User [ID = 87] in MovieLens dataset.
+    'GoldenEye (1995)'                 [4]
+    'Get Shorty (1995)'                [5]
+    'Twelve Monkeys (1995)'            [4]
+    'Babe (1995)'                      [5]
+    'Dead Man Walking (1995)'          [4]
+    'Mighty Aphrodite (1995)'          [3]
+    'Muppet Treasure Island (1996)'    [3]
+    'Braveheart (1995)'                [4]
+    'Birdcage, The (1996)'             [4]
+    'Bad Boys (1995)'                  [4]
+
+</pre><h2>Using the MovieLens Dataset - get user-based recommendations (Page 26)<a name="17"></a></h2><pre class="codeinput"><span class="comment">% get user-based recommendations for User ID = 87</span>
+temp = getRecommendations(prefs,87,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+<span class="keyword">for</span> i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+<span class="keyword">end</span>
+
+disp(<span class="string">'Recommend movies for User [ID = 87] - user-based filtering'</span>)
+disp(tempCell(1:10,:))
+
+clear <span class="string">i</span> <span class="string">temp</span>;
+</pre><pre class="codeoutput">Recommend movies for User [ID = 87] - user-based filtering
+    [     5]    'Great Day in Harlem, A (1994)'             
+    [     5]    'They Made Me a Criminal (1939)'            
+    [     5]    'Marlene Dietrich: Shadow and Light (1996) '
+    [     5]    'Star Kid (1997)'                           
+    [     5]    'Boys, Les (1997)'                          
+    [     5]    'Saint of Fort Washington, The (1993)'      
+    [     5]    'Santa with Muscles (1996)'                 
+    [     5]                                     [1x49 char]
+    [4.8988]    'Legal Deceit (1997)'                       
+    [4.8150]    'Letter From Death Row, A (1998)'           
+
+</pre><h2>Using the MovieLens Dataset - build the item-similarity dataset<a name="18"></a></h2><p>This will take a while (10 minutes or so) so go take a break.</p><pre class="codeinput"><span class="comment">% disp('Building item-similarity dataset...');</span>
+<span class="comment">% tStart = tic;</span>
+<span class="comment">%</span>
+<span class="comment">% itemsim=calculateSimilarItems(prefs,50,@sim_distance);</span>
+<span class="comment">%</span>
+<span class="comment">% tEnd = toc(tStart);</span>
+<span class="comment">% fprintf('%d minutes and %f seconds\n',floor(tEnd/60),rem(tEnd,60));</span>
+</pre><h2>Or load prebuild dataset<a name="19"></a></h2><p>This is instantaneous.</p><pre class="codeinput">load <span class="string">ml-itemsim.mat</span>;
+</pre><h2>Using the MovieLens Dataset - get item-based recommendations<a name="20"></a></h2><pre class="codeinput"><span class="comment">% get item-based recommendations for User ID = 87</span>
+temp=getRecommendedItems(prefs,itemsim,87);
+
+tempCell = cell(size(temp,1),2);
+
+<span class="keyword">for</span> i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+<span class="keyword">end</span>
+
+disp(<span class="string">'Recommend movies for User [ID = 87] - item-based filtering'</span>)
+disp(tempCell(1:10,:))
+
+clear <span class="string">i</span> <span class="string">temp</span>;
+</pre><pre class="codeoutput">Recommend movies for User [ID = 87] - item-based filtering
+    [5]    'Toy Story (1995)'                      
+    [5]    'Usual Suspects, The (1995)'            
+    [5]    'What's Eating Gilbert Grape (1993)'    
+    [5]    'Hudsucker Proxy, The (1994)'           
+    [5]    'Much Ado About Nothing (1993)'         
+    [5]    'Silence of the Lambs, The (1991)'      
+    [5]    'Rock, The (1996)'                      
+    [5]    'Phenomenon (1996)'                     
+    [5]    'Reservoir Dogs (1992)'                 
+    [5]    'Monty Python and the Holy Grail (1974)'
+
+</pre><h2>User-Based or Item-Based Filtering?<a name="21"></a></h2><div><ul><li>Item-based filtering is faster with large dataset.</li><li>Item-based filtering requires overhead of maintaining the item similarity table.</li><li>Item-based filtering is more accurate when the dataset is sparse.</li><li>User-based filtering is simpler to implement.</li><li>User-based filtering is more appropriate with smaller in-memory datasets that changes very frequently.</li><li>User-based filtering can show people which other users have preferences similar to their own - good for community-based services link-sharing or music recommendation sites.</li></ul></div><p class="footer"><br>
+      Published with MATLAB&reg; 7.13<br></p></div><!--
+##### SOURCE BEGIN #####
+%% "Programming Collective Intelligence - Building Smart Web 2.0 Applications" 
+% by Toby Segaran (O'Reilly Media, ISBN-10: 0-596-52932-5)
+%
+% Have you ever wondered how Amazon came up with recommendations like 
+% "customers who bought this item also bought..."? Collective Intelligence
+% is at the core of Web 2.0 revolution. 
+%
+% This book is a great introduction to data mining techniques that as 
+% applied by companies like Amazon. It actually gives functional code 
+% examples that you can play with. The book uses Python for examples, so I 
+% rewrote them in MATLAB. I didn't work on del.icio.us link recommender
+% example, however - I could parse XML response returned by del.icio.us 
+% API using xmlread. But perhaps it is easier to use the Python code in 
+% the book to get the data in text file and import that into MATLAB.
+%
+% One word of caution - the result you get with my M-files may not be
+% identical to those in the book, though they should be fairly close. I
+% believe this is because of the rounding errors caused by difference in
+% degree of precision between MATLAB and Python. If this is the case, it's
+% not a big deal for our purpose here, because we don't need  precise
+% numbers to get recommendations.
+
+%% Chapter 2: Making Recommendations
+%
+% This chapter explains how Amazon-like recommendation engines work. The
+% approach used here is called Collaborative Filtering. 
+
+%% Create the movie review dataset 
+% Page 8: Collaborative Filtering - Collecting Preferences
+%
+% Check out "prefs.xls", which contain the basic dataset we use in the
+% following examples. It is a table of data listing movie critics, movies
+% they reviewed, and their ratings. But the data can represent anything you 
+% want - the algorithm won't care so long as the data is formatted in a 
+% similar way. You can import data from the Excel file using the Import 
+% Wizard, but here we run this section of the code to import data into 
+% MATLAB Workspace.
+
+newData = importdata('prefs.xls');
+
+% For some XLS and other spreadsheet files, returned data are packed
+% within an extra layer of structures.  Unpack them.
+fields = fieldnames(newData.data);
+newData.data = newData.data.(fields{1});
+fields = fieldnames(newData.textdata);
+newData.textdata = newData.textdata.(fields{1});
+
+% Create new variables in the base workspace from those fields.
+vars = fieldnames(newData);
+for i = 1:length(vars)
+    assignin('base', vars{i}, newData.(vars{i}));
+end
+
+% There are 7 movie critics:
+% 'Lisa Rose', 'Gene Seymour', 'Michael Phillips', ...
+%    'Claudia Puig', 'Mick LaSalle', 'Jack Matthiews', 'Toby'
+
+critics = textdata(2:end,1);
+
+% There are 6 movies:
+% 'Lady in the Water', 'Snakes on a Plane', 'Just My Luck',...
+%    'Superman Returns', 'The Night Listener', 'You, Me and Dupree'
+
+movies = textdata(1,2:end);
+
+% Data is a matrix of ratings by those critics (row) x movies (col)
+%   [2.5 3.5 3.0 3.5 3.0 2.5;
+%    3.0 3.5 1.5 5.0 3.0 3.5;
+%    2.5 3.0 0 3.5 4.0 0;
+%    0 3.5 3.0 4.0 4.5 2.5;
+%    3.0 4.0 2.0 3.0 3.0 2.0;
+%    3.0 4.0 0 5.0 3.0 3.5;
+%    0 4.5 0 4.0 0 1.0];
+
+prefs = data;
+
+clear newData fields vars i data textdata;
+
+disp('Sample data has been loaded into Workspace.')
+
+%% Generate "Snakes by Dupree preference space" plot 
+% Page 10: Finding Similar Users - Euclidean Distance Score
+%
+% This section of the code plots the movie critics on a graph based on
+% their ratings for two movies - "Snakes on the Plane" and "You, Me, and
+% Dupree". This is a way to show visually the relative positions of the 
+% people in "preference space". The graph is 2D, so we can only use two
+% movies to position critics, but the preference space could be multi-
+% dimensional to use data from more movies. 
+
+x = prefs(:,6);
+y = prefs(:,2);
+datalabels = {'Rose', 'Seymour', 'Phillips', ' ', 'LaSalle', 'Matthiews', 'Toby'};
+nonzero = find(x~=0);
+
+figure1 = figure('Name','Fig-1');
+axes('Parent',figure1);
+xlim([0 5]);
+ylim([0 5]);
+hold('all');
+title('Dupree x Snake Preference Space');
+scatter(x(nonzero), y(nonzero), 'DisplayName', 'Critics', 'XDataSource', 'x', 'YDataSource',...
+    'y'); figure(gcf)
+text(x(nonzero)+0.1,y(nonzero),datalabels(nonzero));
+text(x(4,1)+0.1,y(4,1)-0.2,'Puig');
+xlabel('Dupree');
+ylabel('Snakes');
+
+clear x y figure1 datalabels nonzero;
+
+%% Euclidean Distance Score (Page 11)
+%
+% Euclidean distance takes the relative difference between two points in
+% multi-dimensional space and gives you how far apart they are. We can use
+% it to decide the similarity of two people. "euclidean.xls" shows how this
+% algorithm works in Excel.
+
+% "Lisa Rose" = 1, "Gene Seymour" = 2
+disp('What is the similarity score between Lisa Rose and Gene Seymour? - Euclidean Distance')
+sim_distance(prefs, 1, 2)
+
+clear ans;
+
+%% Generate "Mick LaSalle x Gene Seymour preference space" plot
+% Page 12: Finding Similar Users - Pearson Correlation Score
+%
+% This section of the code plots the movie ratings of two critics Lisa Rose
+% and Gene Seymour on a graph and shows the relative positions of rated
+% movies between them. After generating the graph, go to "Tools REPLACE_WITH_DASH_DASH> Basic
+% Fitting" in the resulting Figure window, select "linear" option, and
+% close the dialog box. Now you see the best-fit line in the graph.
+% The line and how tightly the points cluster around it indicates the 
+% relative similarity between those two critics. If their ratings are 
+% identical, the line will be diagonal. Compare to the graph generated by 
+% the next section of the code.
+
+x = prefs(5,:);
+y = prefs(2,:);
+datalabels={'Lady', 'Snakes', 'Just My Luck','Superman', ' ', 'Dupree'};
+x1=0:5;
+y1=0.62.*x1+1.5;
+
+figure2 = figure('Name','Fig-2');
+axes1=axes('Parent',figure2);
+xlim([0 5]);
+ylim([0 5]);
+hold('all');
+title('Mick LaSalle x Gene Seymour Preference Space');
+scatter(x, y, 'Parent', axes1, 'DisplayName', 'Movies', 'XDataSource', 'x', 'YDataSource',...
+    'y'); figure(gcf)
+plot(x1, y1, 'Parent', axes1, 'DisplayName', 'Linear', 'XDataSource', 'x1', 'YDataSource', 'y2'); figure(gcf)
+text(x+0.1,y,datalabels);
+text(x(5)+0.1,y(5)-0.2,'Night Listener');
+xlabel('Mick LaSalle');
+ylabel('Gene Seymour');
+legend(axes1,'show');
+
+clear axes1 x x1 y y1 figure2 datalabels nonzero;
+
+%% Generate "Jack Matthews x Lisa Rose preference space" plot
+% Page 12: Finding Similar Users - Pearson Correlation Score 
+%
+% Here is another graph - follow the previous steps to add the best-fit
+% line. You notice that this time the points are lined up much closer to
+% the best-fit line. This indicates that there is high correlation between
+% the ratings given by Lisa Rose and Jack Matthews. We can use this
+% correlation coefficient data to determine how similar two people are.
+% This approach is implemented in Pearson Correlation Score below.
+
+x = prefs(6,:);
+y = prefs(1,:);
+datalabels={'Lady', 'Snakes', 'Just My Luck','Superman', 'Night Listener', 'Dupree'};
+nonzero = find(x~=0);
+x1=0:5;
+y1=0.45.*x1+1.3;
+
+figure3 = figure('Name','Fig-3');
+axes1 = axes('Parent',figure3);
+xlim([0 5]);
+ylim([0 5]);
+hold('all');
+title('Jack Matthews x Lisa Rose Preference Space');
+scatter(x(nonzero), y(nonzero), 'Parent', axes1, 'DisplayName', 'Movies', 'XDataSource', 'x', 'YDataSource','y'); figure(gcf)
+plot(x1, y1, 'Parent', axes1, 'DisplayName', 'Linear', 'XDataSource', 'x1', 'YDataSource', 'y2'); figure(gcf)
+text(x(nonzero)+0.1,y(nonzero),datalabels(nonzero));
+xlabel('Jack Matthoews');
+ylabel('Lisa Rose');
+legend(axes1,'show');
+
+clear axes1 x x1 y y1 figure3 datalabels nonzero;
+
+%% Pearson Correlation Score (page 13)
+%
+% Pearson Correlation Score works well when you have grade inflation. 
+% In the previous graph, you see that Jack Matthews tends to give higher
+% rating than Lisa Rose, but the line fit well because they have relatively
+% similar preferences. "pearson.xls" shows how this algorithm works in 
+% Excel.
+
+% "Lisa Rose" = 1, "Gene Seymour" = 2 
+disp('What is the similarity score between Lisa Rose and Gene Seymour? - Pearson Correlation Coefficient')
+sim_pearson(prefs, 1, 2)
+
+clear ans;
+
+%% Ranking the Critics (Page 15)
+% recommend other users with similar tastes
+%
+% Here we take advantage of the two similarity score metrics identified
+% above to score similarities to a given person of all other people in the
+% data and return a ranked result. This can be used to identify group of
+% people with similar preferences. Perhaps great for community building, or
+% even a matchmaking service ;-)
+
+% "Toby" = 7
+temp = topMatches(prefs, 7, 3, @sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+for i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=critics{temp(i,2),:};
+end
+
+disp('Whoes tastes are similar to Toby''s?')
+disp(tempCell)
+
+clear i temp tempCell;
+
+%% Recommending Items (Page 17)
+%
+% Similarity scores can be used to make recommendations. You can find who
+% has similar tastes to given person and find out what other movies those
+% people have seen that the given person has not seen. But we need to use
+% weighted average to make the result consistent. "recommendations for
+% Toby.xls" shows how this algorithm works in Excel.
+
+% get user-based recommendations for Toby
+temp = getRecommendations(prefs,7,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+for i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+end
+
+disp('Recommend movies for Toby - user-based filtering')
+disp(tempCell)
+
+clear i temp tempCell;
+
+%% Matching Products (page 18)
+%
+% Rather than recommending products based on similar people's preference,
+% Amazon gives you recommendations based on the products you selected. So
+% we need to modify the above algorithm to work item-centric rather than
+% user-centric. In other words, rather than comparing people to people, we
+% can compare item to item and find out how similar they are. We can do 
+% this by transposing the preference data without modifying the code. 
+
+% Which movie is most similar to 'Superman Returns'?
+temp = topMatches(prefs',4,5,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+for i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+end
+
+disp('Which movies are most similar to ''Superman Returns''?')
+disp(tempCell)
+
+clear i temp tempCell;
+
+%% Generate "Just My Luck vs. Superman Returns" plot
+% Page 19: Matching Products
+%
+% If you run the previous section of the code, you notice that some scores
+% are negative. Run the following code to generate a plot. You see that the
+% line is sloped downwards on the right, indicating that Superman Returns
+% and Just My Luck are negatively correlated - those who like one would not
+% like the other. 
+
+x = prefs(:,3);
+y = prefs(:,4);
+datalabels = {'Rose', 'Seymour', 'Phillips', 'Puig', 'LaSalle', 'Matthiews', 'Toby'};
+nonzero = find(x~=0);
+x1=0:5;
+y1=-0.48.*x1+5;
+
+figure4 = figure('Name','Fig-4');
+axes1 = axes('Parent',figure4);
+xlim([0 5]);
+ylim([0 5]);
+hold('all');
+title('Just My Luck x Superman Returns Preference Space');
+scatter(x(nonzero), y(nonzero), 'Parent', axes1, 'DisplayName', 'Critics', 'XDataSource', 'x', 'YDataSource', 'y'); figure(gcf)
+plot(x1, y1, 'Parent', axes1, 'DisplayName', 'Linear', 'XDataSource', 'x1', 'YDataSource', 'y2'); figure(gcf)
+text(x(nonzero)+0.1,y(nonzero),datalabels(nonzero));
+xlabel('Just My Luck');
+ylabel('Superman Returns');
+legend(axes1,'show');
+
+clear axes1 x x1 y y1 figure4 datalabels nonzero;
+
+%% Get Recommendations with transposed data (Page 18)
+%
+% Using the transposed data, you get recommendations of people for given
+% item. This can be used to predict which other user will likely enjoy the 
+% movie. Applied to marketing cases, this can be used to identify potential
+% buyers for a given item for marketing promotion. 
+
+% "Just My Luck" = 3; who would like this movie?
+temp= getRecommendations(prefs',3,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+for i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=critics{temp(i,2),:};
+end
+
+disp('Who would probably like ''Just My Luck''?') 
+disp(tempCell)
+
+clear i temp tempCell;
+
+%% Building the Item Comparison Dataset
+% Page 23: Item-Based Filtering - Building the Item Comparison Dataset
+%
+% The algorithm in getRecommendations.m uses user preference to generate
+% recommendations. This will work in a small scale, but it will not be fast
+% once we have a large number of users or items. Therefore, big websites
+% like Amazon.com would not want to use this algorithm as it is. The
+% technique we implemented so far is called "user-based collaborative
+% filtering". More scalable technique is called "item-based collaborative
+% filtering" and it precomputes the similarities among items, rather than
+% users. The key advantage is comparison between items will not change as
+% often as comparison between users, so it doesn't have to be real-time.
+% Yet, once you have the precomputed preference data, you can use it to
+% come up with recommendations very fast. This data has to be updated more
+% frequently early on when you have a small user base, but less frequently
+% as you grow your dataset. 
+
+itemsim = calculateSimilarItems(prefs,10,@sim_distance);
+
+disp('Item-based similarity table has been created.')
+
+%% Get Recommendations
+% Page 25: Item-Based Filtering - Getting Recommendations
+%
+% Now we can use the precomputed preference data to make recommendations.
+% You get all items user rated, find similar items using the precomputed
+% dataset, and weight the result according to how similar they are. "item-
+% based recommendations for Toby.xls" shows how this algorithm works in
+% Excel.
+
+% recommend movies highly rated by other users with similar tastes
+temp=getRecommendedItems(prefs,itemsim,7);
+tempCell = cell(size(temp,1),2);
+
+for i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+end
+
+disp('Recommend movies for Toby - item-based filtering');
+disp(tempCell)
+
+clear i temp tempCell;
+
+%% Using the MovieLens Dataset - import data (Page 25)
+% MovieLens dataset was developed by the GroupLens project at the 
+% University of Minnesota and it can be downloaded from 
+% http://www.grouplens.org/node/12
+% There are two dataset and here we use the 100,000 dataset. 
+
+% load data from u.data and u.item 
+[prefs, movies]= loadMovieLens('ml-data_0');
+
+clear path critics itemsim;
+
+disp('MovieLens dataset has been loaded into Workspace.')
+
+%% Using the MovieLens Dataset - test the dataset (Page 26)
+%
+% Look at some ratings of User ID = 87
+
+% just the first 100 items
+user87=prefs(87,1:100);
+j=0;
+for i=1:size(user87,2)
+    % process if rated
+    if user87(1,i)~=0
+        j=j+1;
+        temp{j,1}=movies{1,i};
+        temp{j,2}=user87(1,i);
+    end
+end
+
+disp('Show the first 10 movies reviewed by User [ID = 87] in MovieLens dataset.')
+disp(temp(1:10,:))
+
+clear i j user87 temp ans;
+
+%% Using the MovieLens Dataset - get user-based recommendations (Page 26)
+
+% get user-based recommendations for User ID = 87
+temp = getRecommendations(prefs,87,@sim_pearson);
+tempCell = cell(size(temp,1),2);
+
+for i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+end
+
+disp('Recommend movies for User [ID = 87] - user-based filtering')
+disp(tempCell(1:10,:))
+
+clear i temp;
+
+%% Using the MovieLens Dataset - build the item-similarity dataset
+%
+% This will take a while (10 minutes or so) so go take a break. 
+
+% disp('Building item-similarity dataset...');
+% tStart = tic;
+% 
+% itemsim=calculateSimilarItems(prefs,50,@sim_distance);
+% 
+% tEnd = toc(tStart);
+% fprintf('%d minutes and %f seconds\n',floor(tEnd/60),rem(tEnd,60));
+
+%% Or load prebuild dataset
+%
+% This is instantaneous.
+load ml-itemsim.mat;
+
+%% Using the MovieLens Dataset - get item-based recommendations
+
+% get item-based recommendations for User ID = 87
+temp=getRecommendedItems(prefs,itemsim,87);
+
+tempCell = cell(size(temp,1),2);
+
+for i=1:size(temp,1)
+    tempCell{i,1}=temp(i,1);
+    tempCell{i,2}=movies{1,temp(i,2)};
+end
+
+disp('Recommend movies for User [ID = 87] - item-based filtering')
+disp(tempCell(1:10,:))
+
+clear i temp;
+
+%% User-Based or Item-Based Filtering?
+%
+% 
+% * Item-based filtering is faster with large dataset.
+% * Item-based filtering requires overhead of maintaining the item similarity
+% table.
+% * Item-based filtering is more accurate when the dataset is sparse. 
+% * User-based filtering is simpler to implement.
+% * User-based filtering is more appropriate with smaller in-memory datasets
+% that changes very frequently.
+% * User-based filtering can show people which other users have preferences
+% similar to their own - good for community-based services link-sharing or 
+% music recommendation sites. 
+
+
+##### SOURCE END #####
+--></body></html>
